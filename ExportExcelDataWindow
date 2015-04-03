@@ -22,6 +22,14 @@ public class ExportExcelDataWindow : EditorWIndow
   private const string CONST_CLIENT_STRING_TYPE = "string";
   private const string CONST_LIENT_BOOL_TYPE = "bool";
   
+  private const string CONST_SERVER_MEMBER_NEED = "e";
+  private const string CONST_SERVER_STRING_TYPE = "string";
+  
+  private const string CONST_CS_PATH = "/cs/";
+  private const string CONST_ERL_PATH = "/erl/";
+  private const string CONST_CS_FILE = "/cs/Sys";
+  private const string CONST_ERL_FILE = "/erl/sys_";
+  
   private string excelFolderLocation;
   private string curFilePath;
   private string curFileName;
@@ -97,6 +105,244 @@ public class ExportExcelDataWindow : EditorWIndow
     List<string> fileList = new List<string>();
     fileList.AddRange(Directory.GetFiles(excelFolderLocation));
     
+    for(int i=0; i<fileList.Count; i++)
+    {
+      filePath = fileList[i].Replace("\\", "/");
+      fileName = filePath.Substring(filePath.LastIndexOf("/") + 1);
+      if(!(fileName.EndsWith(".xlsx") || fileName.EndsWith(".xls")) || fileName.StartsWith("~$"))
+      {
+        continue;
+      }
+      fileName = fileName.Substring(0, fileName.LastIndexOf("."));
+      curFilePath = filePath;
+      curFileName = fileName;
+      
+      CheckOutputFolder();
+      
+      ReadExcel();
+      ResetDictionary();
+    }
+    Debug.Log("Export complete");
+  }
+  
+  private void CheckOutputFolder()
+  {
+    DirectoryInfo dir = new DirectoryInfo(excelFolderLocation + CONST_CS_PATH);
+      if(!dir.Exists)
+      {
+        dir.Create();
+      }
+      
+      dir = new DirectoryInfo(excelFolderLocation + CONST_ERL_PATH);
+      if(!dir.Exists)
+      {
+        dir.Create();
+      }
+  }
+  
+  private void ResetDictionary()
+  {
+    dicColumnNames.Clear();
+    dicKeys.Clear();
+    dicClientMembers.Clear();
+    dicClientTypes.Clear();
+    serverMembersList.Clear();
+    serverTypesList.Clear();
+    dicData.Clear();
+  }
+  
+  private void ReadExcel()
+  {
+    DataTable dataTable = ExcelUtil.readExcel(curFilePath, curFileName);
+    if(dataTable.Rows.Count < (CONST_SERVER_TYPES_ROW_INDEX + 1))
+    {
+      Debug.LogError(curFilePath + "lacks " + (CONST_SERVER_TYPES_ROW_INDEX + 1) + " head rows config info");
+      return;
+    }
+    for(int i=0; i<dataTable.Rows.Count; i++)
+    {
+      switch(i)
+      {
+        case CONST_FILE_INFO_ROW_INDEX:
+          fileInfo = dataTable.Rows[CONST_FILE_INFO_ROW_INDEX][dataTable.Columns[0]].ToString();
+          continue;
+        case CONST_COLUMN_NAMES_ROW_INDEX:
+          ReadColumnNames(dataTable);
+          continue;
+        case CONST_KEYS_ROW_INDEX:
+          ReadKeys(dataTable);
+          continue;
+        case CONST_CLIENT_MEMBERS_ROW_INDEX:
+          ReadClientMembers(dataTable);
+          continue;
+        case CONST_CLIENT_TYPES_ROW_INDEX:
+          ReadClientTypes(dataTable);
+          CreateClientSysFile();
+          continue;
+        case CONST_SERVER_MEMBERS_ROW_INDEX:
+          ReadServerMembers(dataTable);
+          continue;
+        case CONST_SERVER_TYPES_ROW_INDEX:
+          ReadServerTypes(dataTable);
+          continue;
+        default:
+        break;
+      }
+    }
+  }
+  
+  private void ReadColumnNames(DataTable dataTable)
+  {
+    for(int i=0; i<datable.Columns.Count; i++)
+    {
+      dicColumnNames[i] = dataTable.Rows[CONST_COLUMN_NAMES_ROW_INDEX][dataTable.Columns[i]].ToString();
+    }
+  }
+  
+  private void ReadKeys(DataTable dataTable)
+  {
+    string key;
+    for(int i=0; i<datable.Columns.Count; i++)
+    {
+      key = dataTable.Rows[CONST_KEYS_ROW_INDEX][dataTable.Columns[i]].ToString();
+      if(string.IsNullOrEmpty(key))
+      {
+        continue;
+      }
+      int keyIndex = int.Parse(key);
+      if(keyIndex > 0)
+      {
+        dicKeys[keyIndex] = i;
+      }
+    }
     
+    if(dicKeys.Count <= 0)
+    {
+      Debug.LogError(curFilePath + "lacks primary key config");
+    }
+  }
+  
+  private void ReadClientMembers(DataTable dataTable)
+  {
+    for(int i=0; i<datable.Columns.Count; i++)
+    {
+      dicClientMembers[i] = dataTable.Rows[CONST_CLIENT_MEMBERS_ROW_INDEX][dataTable.Columns[i]].ToString();
+    }
+  }
+  
+  private void ReadClientTypes(DataTable dataTable)
+  {
+    for(int i=0; i<datable.Columns.Count; i++)
+    {
+      dicClientTypes[i] = dataTable.Rows[CONST_CLIENT_TYPES_ROW_INDEX][dataTable.Columns[i]].ToString();
+    }
+  }
+  
+  private void ReadServerMembers(DataTable dataTable)
+  {
+    string member;
+    for(int i=0; i<datable.Columns.Count; i++)
+    {
+      member = dataTable.Rows[CONST_SERVER_MEMBERS_ROW_INDEX][dataTable.Columns[i]].ToString();
+      if(string.IsNullOrEmpty(member))
+      {
+        continue;
+      }
+      if(member.ToLower().Equals(CONST_SERVER_MEMBER_NEED))
+      {
+        serverMembersList.Add(i);
+      }
+    }
+  }
+  
+  private void ReadServerTypes(DataTable dataTable)
+  {
+    string type;
+    for(int i=0; i<datable.Columns.Count; i++)
+    {
+      type = dataTable.Rows[CONST_SERVER_TYPES_ROW_INDEX][dataTable.Columns[i]].ToString();
+      if(string.IsNullOrEmpty(type))
+      {
+        continue;
+      }
+      if(type.ToLower().Equals(CONST_SERVER_STRING_TYPE))
+      {
+        serverTypesList.Add(i);
+      }
+    }
+  }
+  
+  private void CreateClientCsFile()
+  {
+    string outpath = curFilePath.Substring(0, curFilePath.LastIndexOf("/")) + CONST_CS_FILE + curFileName + ".cs";
+    string columnName;
+    string type;
+    try
+    {
+      if(System.IO.File.Exists(outpath))
+      {
+        File.Delete(outpath);
+      }
+      StreamWrite writer = new StreamWriter(outpath, false, Encoding.UTF8);
+      writer.WriteLine("/**");
+      writer.WriteLine("* " + fileInfo + "(auto generate, don't edit)");
+      writer.WriteLine("*/");
+      writer.WriteLine("using System;");
+      writer.WriteLine("using System.ComponentModel");
+      writer.WriteLine("namespace com.game.data");
+      writer.WriteLine("{");
+      writer.WriteLine("\t[Serializable]");
+      writer.WriteLine("\tpublic class Sys" + curFileName);
+      writer.WriteLine("\t{");
+      writer.WriteLine("\t\t[Description(\"unike key\")]");
+      writer.WriteLine("\t\tpublic uint unikey;");
+      foreach(KeyValuePair<int,string> kvClientMember in dicClientMembers)
+      {
+        if(dicColumnNames.TryGetValue(kvClientMember.Key, out columnName))
+        {
+          writer.WriteLine("\t\t[Description(\"" + columnName + "\")]");
+        }
+        if(dicClientTypes.TryGetValue(kvClientMember.Key, out type))
+        {
+          switch(type)
+          {
+            case CONST_CLIENT_UINT_TYPE:
+              writer.WriteLine("\t\tpublic uint " + kvClientMember.Value + ";");
+              continue;
+            case CONST_CLIENT_INT_TYPE:
+              writer.WriteLine("\t\tpublic int " + kvClientMember.Value + ";");
+              continue;
+            case CONST_CLIENT_SHORT_TYPE:
+              writer.WriteLine("\t\tpublic short " + kvClientMember.Value + ";");
+              continue;
+            case CONST_CLIENT_BYTE_TYPE:
+              writer.WriteLine("\t\tpublic byte " + kvClientMember.Value + ";");
+              continue;
+            case CONST_CLIENT_STRING_TYPE:
+              writer.WriteLine("\t\tpublic string " + kvClientMember.Value + ";");
+              continue;
+            case CONST_CLIENT_BOOL_TYPE:
+              writer.WriteLine("\t\tpublic bool " + kvClientMember.Value + ";");
+              continue;
+            default:
+              Debug.LogError(curFilePath + " the type of member for client is incorrect: " + kvClientMember.Value);
+              break;
+          }
+        }
+        else
+        {
+          Debug.LogError(curFilePath + " the type of member for client is incorrect: " + kvClientMember.Value);
+        }
+      }
+      writer.WriteLine("\t}");
+      writer.WriteLine("}");
+      writer.Flush();
+      writer.Close();
+      writer.Dispose();
+    }
+    catch(System.Esception ex)
+    {
+      Debug.LogError(curFileName + "generate .cs file fail" + ex.Message);
+    }
   }
 }
