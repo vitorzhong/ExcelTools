@@ -7,5 +7,18 @@ using UnityEngine;
 
 public class ExcelUtil
 {
-
+  public static DataTable readExcel(string filePath, string sheetName)
+  {
+    DataTable dataTable = new DataTable();
+    string con = "Driver={Microsoft Excel Driver (*.xls, *.xlsx, *.xlsm, *.xlsb)}; Dbq=" + filePath +";";
+    string sql = "SELECT * FROM [" + sheetName + "$]";
+    OdbcConnection oCon = new OdbcConnection(con);
+    OdbcCommand oCmd = new OdbcCommand(sql, oCon);
+    oCon.Open();
+    OdbcDataReader oDataReader = oCmd.ExecuteReader();
+    dataTable.Load(oDataReader);
+    oDataReader.Close();
+    oCon.Close();
+    return dataTable;
+  }
 }
